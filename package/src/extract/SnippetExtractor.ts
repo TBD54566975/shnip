@@ -65,7 +65,7 @@ export class SnippetExtractor {
 
       endIndex = content.indexOf(prependEnd, endOfStartTag);
       if (endIndex === -1) {
-        console.log("No matching :prepend-end: found for :prepend-start:");
+        console.warn("No matching :prepend-end: found for :prepend-start:");
         break;
       }
 
@@ -92,13 +92,13 @@ export class SnippetExtractor {
     while ((startIndex = content.indexOf(start, endIndex)) !== -1) {
       const startTagClose = content.indexOf("\n", startIndex);
       if (startTagClose === -1) {
-        console.log("Snippet start tag not followed by newline. Skipping...");
+        console.warn("Snippet start tag not followed by newline. Skipping...");
         break;
       }
 
       endIndex = content.indexOf(end, startTagClose);
       if (endIndex === -1) {
-        console.log("No closing tag found for a snippet. Skipping...");
+        console.warn("No closing tag found for a snippet. Skipping...");
         break;
       }
 
@@ -156,32 +156,48 @@ export class SnippetExtractor {
     return false;
   }
 
-  public processDirectory(directory: string, relativePath = "") {
-    const absoluteDir = path.resolve(this.projectRoot, directory);
-
-    const items = fs.readdirSync(absoluteDir);
-    items.forEach((item: any) => {
-      const fullPath = path.join(absoluteDir, item);
-      const stat = fs.statSync(fullPath);
-
-      if (stat.isDirectory()) {
-        this.processDirectory(
-          path.join(directory, item),
-          path.join(relativePath, item)
-        );
-      } else if (this.config.fileExtensions.includes(path.extname(item))) {
-        const content = fs.readFileSync(fullPath, "utf-8");
-
-        this.prependBlocks = {};
-        this.gatherSnippetNames(content);
-        this.gatherImports(content);
-
-        if (!this.shouldExcludeFile(content)) {
-          const fileSnippets = this.extractSnippetsFromFile(content, fullPath);
-          this.writeSnippetsToFile(fileSnippets, fullPath, relativePath);
-        }
+  private ensureDirectoryExists(dir: string) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
-    });
+    } catch (err) {
+      console.error(`Error creating directory ${dir}:`, err);
+      throw err;
+    }
+  }
+
+  public processDirectory(directory: string, relativePath = "") {
+    try {
+      const absoluteDir = path.resolve(this.projectRoot, directory);
+
+      const items = fs.readdirSync(absoluteDir);
+      items.forEach((item: any) => {
+        const fullPath = path.join(absoluteDir, item);
+        const stat = fs.statSync(fullPath);
+
+        if (stat.isDirectory()) {
+          this.processDirectory(
+            path.join(directory, item),
+            path.join(relativePath, item)
+          );
+        } else if (this.config.fileExtensions.includes(path.extname(item))) {
+          const content = fs.readFileSync(fullPath, "utf-8");
+
+          this.prependBlocks = {};
+          this.gatherSnippetNames(content);
+          this.gatherImports(content);
+
+          if (!this.shouldExcludeFile(content)) {
+            const fileSnippets = this.extractSnippetsFromFile(content, fullPath);
+            this.writeSnippetsToFile(fileSnippets, fullPath, relativePath);
+          }
+        }
+      });
+    } catch (err) {
+      console.error(`Error processing directory ${directory}:`, err);
+      throw err;
+    }
   }
 
   private writeSnippetsToFile(
@@ -206,14 +222,16 @@ export class SnippetExtractor {
           break;
       }
 
-      if (!fs.existsSync(path.dirname(outputPath))) {
-        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      try {
+        this.ensureDirectoryExists(path.dirname(outputPath));
+        fs.writeFileSync(
+          outputPath,
+          `export default ${JSON.stringify(snippetContent)};`
+        );
+      } catch (err) {
+        console.error(`Error writing snippet ${snippetName} to ${outputPath}:`, err);
+        throw err;
       }
-
-      fs.writeFileSync(
-        outputPath,
-        `export default ${JSON.stringify(snippetContent)};`
-      );
     }
   }
 
@@ -247,14 +265,17 @@ export class SnippetExtractor {
   }
 
   public extractSnippets() {
-    const absoluteOutputDir = path.resolve(
-      this.projectRoot,
-      this.config.snippetOutputDirectory
-    );
-    if (!fs.existsSync(absoluteOutputDir)) {
-      fs.mkdirSync(absoluteOutputDir, { recursive: true });
+    try {
+      const absoluteOutputDir = path.resolve(
+        this.projectRoot,
+        this.config.snippetOutputDirectory
+      );
+      this.ensureDirectoryExists(absoluteOutputDir);
+      this.processDirectory(this.config.rootDirectory);
+    } catch (err) {
+      console.error("Error extracting snippets:", err);
+      throw err;
     }
-    this.processDirectory(this.config.rootDirectory);
   }
 }
 
