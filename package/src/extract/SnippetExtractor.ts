@@ -102,8 +102,15 @@ export class SnippetExtractor {
         break;
       }
 
+      // Extract snippet name, handling both inline and newline cases
+      let snippetNameEnd = startTagClose;
+      const possibleInlineEnd = content.indexOf("*/", startIndex);
+      if (possibleInlineEnd !== -1 && possibleInlineEnd < startTagClose) {
+        snippetNameEnd = possibleInlineEnd;
+      }
+
       const snippetName = content
-        .substring(startIndex + start.length, startTagClose)
+        .substring(startIndex + start.length, snippetNameEnd)
         .trim();
       let snippetContent = content.substring(startTagClose + 1, endIndex);
 
